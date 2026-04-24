@@ -130,6 +130,6 @@ if(sistemaArmado != estadoSistemaAnterior){
         }
 
     }
-
-    estadoSistemaAnterior = sistemaArmado;
+  }
+  estadoSistemaAnterior = sistemaArmado;
 }
