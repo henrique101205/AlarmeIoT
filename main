@@ -1,0 +1,135 @@
+#include <WiFi.h>
+#include <PubSubClient.h>
+#include <ESP32Servo.h>
+
+//Definição dos pinos para os componente usados
+#define servoPin 26
+#define buzzer 25
+#define botao 13
+#define LED 14
+#define sensorPir 27
+
+//Configurando WiFi e conexão MQTT
+const char* ssid = "SUA_REDE";
+const char* password = "SUA_SENHA";
+
+const char* mqtt_server = "BROKER";
+const int mqtt_port = 1883;
+
+WiFiClient espClient;
+PubSubClient client(espClient);
+
+//Configurando servos variáveis de estado e canais PWM do buzzer
+Servo servo;
+
+bool estadoSistemaAnterior = true;
+bool controleMQTT = true;
+bool controleManual = true;
+bool estadoSensor = true;
+bool estadoBotao = true;
+bool estadoBotaoAnterior = true;
+
+int canalBuzzer = 1;
+bool estadoBuzzer = false;
+
+//Variáveis para funções de controle de tempo usando millis()
+const int debounce = 20;
+unsigned long tempoDebounce = 0;
+const int intervalo = 250;
+unsigned long tempoAnterior = 0;
+unsigned long intervaloMQTT = 1000;
+unsigned long tempoMQTT = 0;
+const int intervaloWiFi = 2000;
+unsigned long tempoWiFi = 0;
+const int intervaloReconexaoMQTT = 500;
+unsigned long tempoReconexaoMQTT = 0;
+
+//Protótipos de função
+void callback(char* topic, byte* message, unsigned int length);
+void alarme();
+
+void setup() {
+  Serial.begin(115200);
+
+  client.setServer(mqtt_server, mqtt_port);
+  client.setCallback(callback);
+
+  servo.attach(servoPin);
+  ledcAttachChannel(buzzer, 5000, 8, canalBuzzer);
+
+  pinMode(botao, INPUT_PULLUP);
+  pinMode(LED, OUTPUT);
+  pinMode(sensorPir, INPUT);
+}
+
+void loop() {
+  estadoBotao = digitalRead(botao);
+  estadoSensor = digitalRead(sensorPir);
+
+//Função para controle do sistema usando o botão
+  if(millis() - tempoDebounce >= debounce){
+    tempoDebounce = millis();
+    if(estadoBotao == false && estadoBotaoAnterior == true){
+      controleManual = !controleManual;
+    }
+    estadoBotaoAnterior = estadoBotao;
+  }
+
+  if(estadoSensor && controleManual && controleMQTT){
+    digitalWrite(LED, HIGH);
+    alarme();
+    servo.write(180);
+    if(millis() - tempoMQTT >= intervaloMQTT){
+      tempoMQTT = millis();
+      if(client.connected()){
+        client.publish("AlarmeIoT", "ALERTA DE INVASÃO!");
+      }
+    }
+  }
+  else{
+    digitalWrite(LED, LOW);
+    ledcWriteChannel(canalBuzzer, 0);
+    servo.write(0);
+  }
+
+  if(WiFi.status() != WL_CONNECTED){
+    if(millis() - tempoWiFi >= intervaloWiFi){
+      tempoWiFi = millis();
+      Serial.println("Conectando");
+      WiFi.begin(ssid, password);
+    }
+  }
+  else{
+    if(!client.connected()){
+      if(millis() - tempoReconexaoMQTT >= intervaloReconexaoMQTT){
+        tempoReconexaoMQTT = millis();
+        if(client.connect("ESP32_IoT")){
+          Serial.println("Conectando ao client");
+          client.subscribe("ControleAlarme");
+        }
+      }
+    }
+    else{
+      client.loop();
+    }
+  }
+
+  bool sistemaArmado = controleManual && controleMQTT;
+
+if(sistemaArmado != estadoSistemaAnterior){
+
+    if(client.connected()){
+
+        if(sistemaArmado){
+            client.publish("estadoAlarme", "ARMADO");
+            Serial.println("ARMADO");
+        }
+        else{
+            client.publish("estadoAlarme", "DESARMADO");
+            Serial.println("DESARMADO");
+        }
+
+    }
+
+    estadoSistemaAnterior = sistemaArmado;
+}
