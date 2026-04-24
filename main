@@ -127,8 +127,7 @@ if(sistemaArmado != estadoSistemaAnterior){
         else{
             client.publish("estadoAlarme", "DESARMADO");
             Serial.println("DESARMADO");
-        }
-
+      }
     }
   }
   estadoSistemaAnterior = sistemaArmado;
